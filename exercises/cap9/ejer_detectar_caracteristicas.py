@@ -302,62 +302,6 @@ def analisis_keypoints():
         heatmap = crear_heatmap_keypoints(img, positions)
         mostrar_imagen_streamlit(heatmap, "")
     
-    # Estadísticas
-    st.markdown("---")
-    crear_seccion("Estadísticas", "")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    col1.metric("Total Keypoints", f"{len(keypoints):,}")
-    col2.metric("Tamaño Promedio", f"{np.mean(sizes):.2f}")
-    col3.metric("Response Promedio", f"{np.mean(responses):.4f}")
-    
-    angles_deg = angles[angles >= 0]  # Filtrar ángulos no definidos
-    if len(angles_deg) > 0:
-        col4.metric("Ángulo Promedio", f"{np.mean(angles_deg):.1f}°")
-    else:
-        col4.metric("Ángulo", "N/A")
-    
-    # Histogramas
-    st.markdown("---")
-    crear_seccion("Distribuciones", "")
-    
-    import matplotlib.pyplot as plt
-    
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Posiciones X
-    axes[0, 0].hist(positions[:, 0], bins=50, color='steelblue', alpha=0.7, edgecolor='black')
-    axes[0, 0].set_xlabel('Posición X')
-    axes[0, 0].set_ylabel('Frecuencia')
-    axes[0, 0].set_title('Distribución Horizontal')
-    axes[0, 0].grid(True, alpha=0.3)
-    
-    # Posiciones Y
-    axes[0, 1].hist(positions[:, 1], bins=50, color='coral', alpha=0.7, edgecolor='black')
-    axes[0, 1].set_xlabel('Posición Y')
-    axes[0, 1].set_ylabel('Frecuencia')
-    axes[0, 1].set_title('Distribución Vertical')
-    axes[0, 1].grid(True, alpha=0.3)
-    
-    # Tamaños
-    axes[1, 0].hist(sizes, bins=30, color='green', alpha=0.7, edgecolor='black')
-    axes[1, 0].set_xlabel('Tamaño')
-    axes[1, 0].set_ylabel('Frecuencia')
-    axes[1, 0].set_title('Distribución de Tamaños')
-    axes[1, 0].grid(True, alpha=0.3)
-    
-    # Responses
-    axes[1, 1].hist(responses, bins=30, color='purple', alpha=0.7, edgecolor='black')
-    axes[1, 1].set_xlabel('Response (fuerza)')
-    axes[1, 1].set_ylabel('Frecuencia')
-    axes[1, 1].set_title('Distribución de Responses')
-    axes[1, 1].grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close()
-    
 
 
 def visualizacion_detallada():
@@ -424,70 +368,6 @@ def visualizacion_detallada():
     
     st.markdown("---")
     mostrar_imagen_streamlit(img_filtered, f"Top {top_n} Keypoints (por response)")
-    
-    # Explorador individual
-    st.markdown("---")
-    crear_seccion("Explorador Individual", "")
-    
-    kp_index = st.slider(
-        "Selecciona un keypoint",
-        0, len(keypoints_filtered) - 1, 0,
-        help="Navega entre los keypoints detectados"
-    )
-    
-    kp = keypoints_filtered[kp_index]
-    
-    # Crear vista ampliada del keypoint
-    x, y = int(kp.pt[0]), int(kp.pt[1])
-    size = int(kp.size)
-    
-    # Ventana alrededor del keypoint
-    margin = max(50, size * 3)
-    y1 = max(0, y - margin)
-    y2 = min(img.shape[0], y + margin)
-    x1 = max(0, x - margin)
-    x2 = min(img.shape[1], x + margin)
-    
-    roi = img[y1:y2, x1:x2].copy()
-    
-    # Ajustar coordenadas del keypoint para la ROI
-    kp_roi = cv2.KeyPoint(x - x1, y - y1, kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
-    
-    # Dibujar keypoint en ROI
-    roi_with_kp = cv2.drawKeypoints(
-        roi, [kp_roi], None,
-        color=(0, 255, 0),
-        flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS
-    )
-    
-    # Dibujar cruz en el centro
-    cv2.drawMarker(roi_with_kp, (int(kp_roi.pt[0]), int(kp_roi.pt[1])),
-                  (255, 0, 0), cv2.MARKER_CROSS, 20, 2)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown(f"**Keypoint #{kp_index + 1} de {len(keypoints_filtered)}**")
-        mostrar_imagen_streamlit(roi_with_kp, "")
-    
-    with col2:
-        st.markdown("### Propiedades")
-        st.markdown(f"""
-        **Posición:**
-        - X: `{kp.pt[0]:.2f}` px
-        - Y: `{kp.pt[1]:.2f}` px
-        
-        **Características:**
-        - Tamaño: `{kp.size:.2f}` px
-        - Ángulo: `{kp.angle:.2f}`°
-        - Response: `{kp.response:.6f}`
-        - Octave: `{kp.octave}`
-        - Class ID: `{kp.class_id}`
-        
-        **Metadata:**
-        - Índice: `{kp_index + 1}/{len(keypoints_filtered)}`
-        - Ranking: `Top {((kp_index + 1)/len(keypoints_filtered)*100):.1f}%`
-        """)
 
 
 def mostrar_teoria():

@@ -283,24 +283,6 @@ def deteccion_keypoints():
     if mostrar_info and len(keypoints) > 0:
         mostrar_informacion_keypoints(keypoints)
     
-    # Opciones de análisis adicional
-    st.markdown("---")
-    crear_seccion("Análisis Adicional", "")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("Ver distribución de escalas", use_container_width=True):
-            mostrar_distribucion_escalas(keypoints)
-    
-    with col2:
-        if st.button("Ver distribución de orientaciones", use_container_width=True):
-            mostrar_distribucion_orientaciones(keypoints)
-    
-    with col3:
-        if st.button("Ver mapa de calor", use_container_width=True):
-            mostrar_mapa_calor(img, keypoints)
-    
     # Botón de descarga
     if len(keypoints) > 0 and boton_accion("Guardar resultado", key="save_sift"):
         guardar_resultado(img_keypoints, "sift_keypoints.jpg")
@@ -509,45 +491,6 @@ def comparacion_parametros():
     
     st.markdown("---")
     
-    # Tabla comparativa
-    st.markdown("### Tabla Comparativa")
-    
-    configs = [
-        ("Muy permisivo", 0, 3, 0.02, 10, 1.6),
-        ("Estándar", 0, 3, 0.04, 10, 1.6),
-        ("Restrictivo", 0, 3, 0.08, 15, 1.6),
-        ("Muy restrictivo", 0, 3, 0.12, 20, 1.6),
-    ]
-    
-    results = []
-    
-    for nombre, nf, no, ct, et, s in configs:
-        sift = crear_sift_detector(nf, no, ct, et, s)
-        keypoints = sift.detect(gray, None)
-        avg_response = np.mean([kp.response for kp in keypoints]) if keypoints else 0
-        avg_size = np.mean([kp.size for kp in keypoints]) if keypoints else 0
-        
-        results.append({
-            "Configuración": nombre,
-            "Keypoints": len(keypoints),
-            "Respuesta Promedio": f"{avg_response:.4f}",
-            "Tamaño Promedio": f"{avg_size:.1f}px",
-            "Umbral Contraste": ct,
-            "Umbral Borde": et
-        })
-    
-    import pandas as pd
-    df = pd.DataFrame(results)
-    st.dataframe(df, use_container_width=True)
-    
-    st.info("""
-    **Observaciones:**
-    - Umbrales más bajos → Más keypoints (incluye puntos débiles)
-    - Umbrales más altos → Menos keypoints (solo los más robustos)
-    - Más capas por octava → Mejor detección multi-escala pero más lento
-    """)
-
-
 def mostrar_teoria():
     """Sección teórica sobre SIFT."""
     
