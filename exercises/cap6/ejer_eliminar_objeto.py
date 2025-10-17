@@ -155,8 +155,15 @@ def eliminacion_interactiva():
         
         # Usar streamlit-drawable-canvas si está disponible
         try:
-            from streamlit_drawable_canvas import st_canvas
             
+            from streamlit_drawable_canvas import st_canvas
+            original_st_image = st.image
+            # Parche temporal: asegurar compatibilidad con nuevas versiones
+            def patched_image(*args, **kwargs):
+                if "use_container_width" in kwargs:
+                    kwargs["use_column_width"] = kwargs.pop("use_container_width")
+                return original_st_image(*args, **kwargs)
+            st.image = patched_image
             # Convertir imagen para canvas
             img_rgb = bgr_to_rgb(img)
             pil_img = Image.fromarray(img_rgb)
@@ -167,6 +174,7 @@ def eliminacion_interactiva():
             st.write("Modo:", getattr(pil_img, "mode", "sin modo"))
             st.write("Tamaño:", getattr(pil_img, "size", "sin tamaño"))
             st.image(pil_img, caption="Verificación previa", use_container_width=True)
+
             canvas_result = st_canvas(
                 fill_color="rgba(255, 0, 0, 0.3)",
                 stroke_width=3,
