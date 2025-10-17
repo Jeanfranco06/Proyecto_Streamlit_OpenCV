@@ -108,7 +108,6 @@ def eliminacion_interactiva():
                 img = leer_imagen(str(img_path))
             else:
                 st.warning(f"No se encontró {img_path}. Usa 'Subir imagen' para probar.")
-                # Crear imagen de demostración
                 img = crear_imagen_demo()
         
         if img is None:
@@ -155,31 +154,18 @@ def eliminacion_interactiva():
         
         # Usar streamlit-drawable-canvas si está disponible
         try:
-            
             from streamlit_drawable_canvas import st_canvas
-            original_st_image = st.image
-            # Parche temporal: asegurar compatibilidad con nuevas versiones
-            def patched_image(*args, **kwargs):
-                if "use_container_width" in kwargs:
-                    kwargs["use_column_width"] = kwargs.pop("use_container_width")
-                return original_st_image(*args, **kwargs)
-            st.image = patched_image
+            
             # Convertir imagen para canvas
             img_rgb = bgr_to_rgb(img)
             pil_img = Image.fromarray(img_rgb)
             
-            # Canvas interactivo
-            background_url = pil_to_data_url(pil_img)
-            st.write("Tipo de imagen:", type(pil_img))
-            st.write("Modo:", getattr(pil_img, "mode", "sin modo"))
-            st.write("Tamaño:", getattr(pil_img, "size", "sin tamaño"))
-            st.image(pil_img, caption="Verificación previa", use_container_width=True)
-
+            # IMPORTANTE: No convertir a data URL, pasar directamente
             canvas_result = st_canvas(
                 fill_color="rgba(255, 0, 0, 0.3)",
                 stroke_width=3,
                 stroke_color="#00FF00",
-                background_image=pil_img,
+                background_image=pil_img,  # Pasar PIL Image directamente
                 update_streamlit=True,
                 height=img.shape[0],
                 width=img.shape[1],
@@ -236,23 +222,15 @@ def eliminacion_interactiva():
         if len(objects) > 0:
             rect = objects[-1]  # Último rectángulo dibujado
             
-            # Manejar diferentes versiones de streamlit-drawable-canvas
+            # Extraer coordenadas de forma robusta
             try:
-                # Intentar acceder como diccionario
                 rect_x = int(rect.get("left", 0))
                 rect_y = int(rect.get("top", 0))
                 rect_w = int(rect.get("width", 0))
                 rect_h = int(rect.get("height", 0))
-            except Exception:
-                # Si falla, intentar acceder como lista/tupla de valores
-                try:
-                    rect_x = int(rect[0])
-                    rect_y = int(rect[1])
-                    rect_w = int(rect[2])
-                    rect_h = int(rect[3])
-                except Exception:
-                    st.error("❌ Error al extraer coordenadas del rectángulo. Usa entrada manual.")
-                    rect_x = rect_y = rect_w = rect_h = 0
+            except Exception as e:
+                st.error(f"Error al extraer coordenadas: {e}")
+                rect_x = rect_y = rect_w = rect_h = 0
             
             if rect_w > 0 and rect_h > 0:
                 st.success(f"Región seleccionada: x={rect_x}, y={rect_y}, w={rect_w}, h={rect_h}")
@@ -282,13 +260,6 @@ def eliminacion_interactiva():
                 protection_size,
                 mostrar_proceso
             )
-
-
-def pil_to_data_url(pil_image):
-    buffer = BytesIO()
-    pil_image.save(buffer, format="PNG")
-    img_str = base64.b64encode(buffer.getvalue()).decode()
-    return f"data:image/png;base64,{img_str}"
 
 def redimensionado_inteligente():
     """Redimensionado de imagen usando seam carving."""
