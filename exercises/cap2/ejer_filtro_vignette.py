@@ -48,10 +48,9 @@ def run():
     rows, cols = img.shape[:2]
     
     # Tabs principales
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "Filtro Interactivo",
         "Estilos Preconfigurados",
-        "Análisis Técnico",
         "Teoría"
     ])
     
@@ -60,9 +59,6 @@ def run():
     
     with tab2:
         estilos_preconfigurados(img, rows, cols)
-    
-    with tab3:
-        analisis_tecnico(img, rows, cols)
     
     with tab4:
         mostrar_teoria()
@@ -250,128 +246,6 @@ def estilos_preconfigurados(img, rows, cols):
     # Botón de descarga
     if boton_accion("Guardar estilo", key="save_preset"):
         guardar_resultado(output, f"vignette_{preset_seleccionado.lower().replace(' ', '_')}.jpg")
-
-
-def analisis_tecnico(img, rows, cols):
-    """Visualización técnica del filtro Gaussiano."""
-    
-    crear_seccion("Análisis Técnico del Filtro", "")
-    
-    st.markdown("""
-    Explora cómo funcionan los kernels Gaussianos y su impacto en la máscara de viñeta.
-    """)
-    
-    with panel_control("Parámetros de Análisis"):
-        sigma_analisis = control_slider(
-            "Sigma del Kernel",
-            50, 400, 200,
-            key="sigma_analisis"
-        )
-    
-    # Generar kernels
-    kernel_x = cv2.getGaussianKernel(cols, sigma_analisis)
-    kernel_y = cv2.getGaussianKernel(rows, sigma_analisis)
-    kernel = kernel_y * kernel_x.T
-    mask = 255 * kernel / np.linalg.norm(kernel)
-    
-    # Visualizaciones
-    tab_a, tab_b, tab_c = st.tabs(["Kernels 1D", "Máscara 2D", "Perfil de Intensidad"])
-    
-    with tab_a:
-        st.markdown("### Kernels Gaussianos 1D")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Kernel Horizontal (X)**")
-            import matplotlib.pyplot as plt
-            fig, ax = plt.subplots(figsize=(8, 3))
-            ax.plot(kernel_x, 'b-', linewidth=2)
-            ax.set_title("Kernel Gaussiano X")
-            ax.set_xlabel("Posición")
-            ax.set_ylabel("Valor")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-            plt.close()
-            
-            st.info(f"Tamaño: {len(kernel_x)} elementos")
-        
-        with col2:
-            st.markdown("**Kernel Vertical (Y)**")
-            fig, ax = plt.subplots(figsize=(8, 3))
-            ax.plot(kernel_y, 'r-', linewidth=2)
-            ax.set_title("Kernel Gaussiano Y")
-            ax.set_xlabel("Posición")
-            ax.set_ylabel("Valor")
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-            plt.close()
-            
-            st.info(f"Tamaño: {len(kernel_y)} elementos")
-    
-    with tab_b:
-        st.markdown("### Máscara 2D Resultante")
-        
-        # Visualizar la máscara como mapa de calor
-        mask_visual = (mask).astype(np.uint8)
-        mask_colored = cv2.applyColorMap(mask_visual, cv2.COLORMAP_JET)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Máscara en Escala de Grises**")
-            mostrar_imagen_streamlit(
-                cv2.cvtColor(mask_visual, cv2.COLOR_GRAY2BGR),
-                "",
-                convertir_rgb=False
-            )
-        
-        with col2:
-            st.markdown("**Mapa de Calor**")
-            mostrar_imagen_streamlit(mask_colored, "")
-        
-        st.info(f"Rango de valores: [{mask.min():.2f}, {mask.max():.2f}]")
-    
-    with tab_c:
-        st.markdown("### Perfil de Intensidad")
-        
-        # Perfil horizontal (fila del medio)
-        mid_row = rows // 2
-        profile_h = mask[mid_row, :]
-        
-        # Perfil vertical (columna del medio)
-        mid_col = cols // 2
-        profile_v = mask[:, mid_col]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Perfil Horizontal (Centro)**")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            ax.plot(profile_h, 'b-', linewidth=2)
-            ax.set_title("Intensidad a lo largo del eje X")
-            ax.set_xlabel("Posición X")
-            ax.set_ylabel("Intensidad")
-            ax.grid(True, alpha=0.3)
-            ax.axhline(y=255/2, color='r', linestyle='--', alpha=0.5, label='50% intensidad')
-            ax.legend()
-            st.pyplot(fig)
-            plt.close()
-        
-        with col2:
-            st.markdown("**Perfil Vertical (Centro)**")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            ax.plot(profile_v, 'r-', linewidth=2)
-            ax.set_title("Intensidad a lo largo del eje Y")
-            ax.set_xlabel("Posición Y")
-            ax.set_ylabel("Intensidad")
-            ax.grid(True, alpha=0.3)
-            ax.axhline(y=255/2, color='b', linestyle='--', alpha=0.5, label='50% intensidad')
-            ax.legend()
-            st.pyplot(fig)
-            plt.close()
-    
-
 
 def mostrar_teoria():
     """Explicación teórica del filtro vignette."""
