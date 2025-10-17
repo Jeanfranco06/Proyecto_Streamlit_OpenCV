@@ -163,7 +163,10 @@ def eliminacion_interactiva():
             
             # Canvas interactivo
             background_url = pil_to_data_url(pil_img)
-
+            st.write("Tipo de imagen:", type(pil_img))
+            st.write("Modo:", getattr(pil_img, "mode", "sin modo"))
+            st.write("Tamaño:", getattr(pil_img, "size", "sin tamaño"))
+            st.image(pil_img, caption="Verificación previa", use_container_width=True)
             canvas_result = st_canvas(
                 fill_color="rgba(255, 0, 0, 0.3)",
                 stroke_width=3,
