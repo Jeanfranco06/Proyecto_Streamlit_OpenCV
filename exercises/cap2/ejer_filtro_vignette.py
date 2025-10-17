@@ -60,7 +60,7 @@ def run():
     with tab2:
         estilos_preconfigurados(img, rows, cols)
     
-    with tab4:
+    with tab3:
         mostrar_teoria()
 
 
