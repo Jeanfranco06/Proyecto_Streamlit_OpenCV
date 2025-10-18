@@ -86,7 +86,7 @@ def mostrar_imagen_segura(img, caption=""):
         if len(img.shape) == 3 and img.shape[2] == 3:
             img = bgr_to_rgb(img)
         
-        st.image(img, caption=caption, use_container_width=True)
+        st.image(img, caption=caption, use_column_width=True)
     except Exception as e:
         st.error(f"Error mostrando imagen: {e}")
 
