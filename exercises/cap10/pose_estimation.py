@@ -14,7 +14,7 @@ try:
 except Exception:
     CANVAS_AVAILABLE = False
 
-# Importa pose_estimation (ya verificado que no tiene st.set_page_config)
+# Importa pose_estimation (está en el mismo directorio)
 from pose_estimation import PoseEstimator, ROISelector
 
 
