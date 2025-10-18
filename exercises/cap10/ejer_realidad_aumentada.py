@@ -6,7 +6,7 @@ Archivo único sin dependencias externas de Streamlit
 
 # LÍNEA 1-2: CONFIGURACIÓN STREAMLIT (ANTES DE CUALQUIER OTRO IMPORT)
 import streamlit as st
-st.set_page_config(page_title="Realidad Aumentada", layout="wide")
+
 
 # LÍNEA 3+: RESTO DE IMPORTS
 import cv2
