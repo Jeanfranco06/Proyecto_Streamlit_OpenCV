@@ -1,206 +1,220 @@
-# pose_estimation.py
+import streamlit as st
+
+# ⚠️ DEBE SER EL PRIMER COMANDO STREAMLIT
+st.set_page_config(page_title="Realidad Aumentada", layout="wide")
+
+# Ahora importa TODO lo demás
 import cv2
 import numpy as np
-from dataclasses import dataclass
-from collections import namedtuple
+from PIL import Image
 
-@dataclass
-class Target:
-    rect: tuple          # (x0, y0, x1, y1)
-    kp: list             # keypoints absolutos (coordenadas en frame) como np.float32 Nx2
-    des: np.ndarray      # descriptores ORB
-    quad: np.ndarray     # esquinas del rectángulo en el frame original (4x2 float32)
+try:
+    from streamlit_drawable_canvas import st_canvas
+    CANVAS_AVAILABLE = True
+except Exception:
+    CANVAS_AVAILABLE = False
 
-@dataclass
-class TrackedItem:
-    target: Target
-    quad: np.ndarray       # esquinas proyectadas (4x2 float32) en el frame actual
-    points_cur: np.ndarray # puntos coincidentes en el frame actual (Mx2 float32)
+# Importa pose_estimation (ya verificado que no tiene st.set_page_config)
+from pose_estimation import PoseEstimator, ROISelector
 
 
-class ROISelector:
-    """
-    Selecciona ROI con el mouse:
-    - Click y arrastrar para dibujar.
-    - Al soltar, llama al callback(rect).
-    """
-    def __init__(self, win_name, frame, on_select_callback):
-        self.win_name = win_name
-        self.on_select_callback = on_select_callback
-        self.frame_h, self.frame_w = (frame.shape[0], frame.shape[1]) if frame is not None else (0, 0)
+class Tracker(object):
+    def __init__(self, scaling_factor=0.8):
+        self.rect = None
+        self.scaling_factor = scaling_factor
+        self.tracker = PoseEstimator()
+        self.first_frame = True
+        self.frame = None
+        self.roi_selector = None
 
-        self.dragging = False
-        self.x0 = self.y0 = self.x1 = self.y1 = 0
-        self.current_rect = None
+        self.overlay_vertices = np.float32([
+            [0,   0,   0],
+            [0,   1,   0],
+            [1,   1,   0],
+            [1,   0,   0],
+            [0.5, 0.5, 4]
+        ])
+        self.overlay_edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)]
 
-        # Algunos paquetes de OpenCV (p. ej. opencv-python-headless) no incluyen
-        # soporte para funciones de ventana (namedWindow, setMouseCallback).
-        # Intentamos crear la ventana y asociar el callback; si falla, marcamos
-        # que la GUI no está disponible para evitar que la app se rompa.
-        self.gui_available = True
-        try:
-            cv2.namedWindow(self.win_name, cv2.WINDOW_NORMAL)
-            cv2.setMouseCallback(self.win_name, self._on_mouse)
-        except Exception:
-            # No podemos crear ventanas en este entorno (headless). La
-            # selección con el ratón no funcionará; la app debe proveer
-            # otra forma de seleccionar ROI (por ejemplo, controles de Streamlit).
-            self.gui_available = False
+        self.color_base = (0, 255, 0)
+        self.color_lines = (0, 0, 0)
 
-    def _on_mouse(self, event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.dragging = True
-            self.x0, self.y0 = x, y
-            self.x1, self.y1 = x, y
-        elif event == cv2.EVENT_MOUSEMOVE and self.dragging:
-            self.x1, self.y1 = x, y
-        elif event == cv2.EVENT_LBUTTONUP:
-            self.dragging = False
-            x0, y0 = min(self.x0, self.x1), min(self.y0, self.y1)
-            x1, y1 = max(self.x0, self.x1), max(self.y0, self.y1)
-            # Evita rectángulos demasiado pequeños
-            if (x1 - x0) >= 10 and (y1 - y0) >= 10:
-                rect = (x0, y0, x1, y1)
-                self.current_rect = rect
-                if self.on_select_callback is not None:
-                    self.on_select_callback(rect)
+    def set_rect(self, rect):
+        self.rect = rect
+        self.tracker.add_target(self.frame, rect)
 
-    def draw_rect(self, img, rect):
-        if rect is not None:
-            x0, y0, x1, y1 = rect
-            cv2.rectangle(img, (x0, y0), (x1, y1), (0, 200, 255), 2)
-        # Si estás arrastrando, dibuja el rect provisional
-        if self.dragging:
-            x0, y0 = self.x0, self.y0
-            x1, y1 = self.x1, self.y1
-            cv2.rectangle(img, (x0, y0), (x1, y1), (0, 255, 255), 1)
+    def process_frame(self, frame):
+        frame = cv2.resize(frame, None, fx=self.scaling_factor,
+                          fy=self.scaling_factor, interpolation=cv2.INTER_AREA)
 
+        if self.first_frame:
+            self.frame = frame.copy()
+            self.roi_selector = ROISelector("AR", frame, self.set_rect)
+            self.first_frame = False
 
-class PoseEstimator(object):
-    def __init__(self, nfeatures=1000, min_matches=10):
-        # Named tuples para targets y objetos trackeados
-        self.cur_target = namedtuple('Current', 'image rect keypoints descriptors data')
-        self.tracked_target = namedtuple('Tracked', 'target points_prev points_cur H quad')
+        self.frame = frame.copy()
+        img = frame.copy()
 
-        # Parámetros
-        self.min_matches = min_matches
-        # ORB detector
-        self.feature_detector = cv2.ORB_create(nfeatures=nfeatures)
-        # Usamos BFMatcher con Hamming para descriptores ORB (binarios)
-        self.feature_matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+        tracked = self.tracker.track_target(self.frame)
+        for item in tracked:
+            cv2.polylines(img, [np.int32(item.quad)], True, self.color_lines, 2)
+            for (x, y) in np.int32(item.points_cur):
+                cv2.circle(img, (x, y), 2, self.color_lines)
+            self.overlay_graphics(img, item)
 
-        # Lista de objetivos registrados (cada uno contiene keypoints y descriptores)
-        self.tracking_targets = []
+        if self.roi_selector:
+            self.roi_selector.draw_rect(img, self.rect)
 
-    def detect_features(self, frame):
-        # Acepta BGR o gray. ORB requiere gray.
-        if frame is None:
-            return [], np.array([], dtype=np.uint8)
-        if len(frame.shape) == 3 and frame.shape[2] == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = frame
-        kps, des = self.feature_detector.detectAndCompute(gray, None)
-        if des is None:
-            des = np.array([], dtype=np.uint8)
-        return kps, des
+        return img
 
-    def add_target(self, image, rect, data=None):
-        """
-        Registra un nuevo target a partir de la imagen completa y el rect (x0,y0,x1,y1).
-        Solo se guardan keypoints/descritores dentro del rect.
-        """
-        x0, y0, x1, y1 = rect
-        kps, des = self.detect_features(image)
-        if len(kps) == 0:
-            return  # nada que añadir
+    def overlay_graphics(self, img, tracked):
+        x_start, y_start, x_end, y_end = tracked.target.rect
+        quad_3d = np.float32([[x_start, y_start, 0], [x_end, y_start, 0],
+                             [x_end, y_end, 0], [x_start, y_end, 0]])
 
-        # Filtrar keypoints y descriptores por la ROI
-        kept_kps = []
-        kept_desc = []
-        for i, kp in enumerate(kps):
-            x, y = kp.pt
-            if x0 <= int(x) <= x1 and y0 <= int(y) <= y1:
-                kept_kps.append(kp)
-                # des puede ser array vacío; proteger
-                if des is not None and len(des) > i:
-                    kept_desc.append(des[i])
+        h, w = img.shape[:2]
+        K = np.float64([[w, 0, 0.5*(w-1)],
+                       [0, w, 0.5*(h-1)],
+                       [0, 0, 1.0]])
+        dist_coef = np.zeros(4)
 
-        if len(kept_kps) < self.min_matches:
-            # No hay suficientes features en el ROI para ser un buen target
+        ret, rvec, tvec = cv2.solvePnP(objectPoints=quad_3d,
+                                      imagePoints=tracked.quad,
+                                      cameraMatrix=K,
+                                      distCoeffs=dist_coef)
+        if not ret:
             return
 
-        kept_desc = np.asarray(kept_desc, dtype=np.uint8)
-        target = self.cur_target(image=image, rect=rect, keypoints=kept_kps,
-                                 descriptors=kept_desc, data=data)
-        self.tracking_targets.append(target)
+        verts = self.overlay_vertices * [(x_end-x_start), (y_end-y_start), -(x_end-x_start)*0.3] + (x_start, y_start, 0)
+        verts = cv2.projectPoints(verts, rvec, tvec, cameraMatrix=K, distCoeffs=dist_coef)[0].reshape(-1, 2)
+        verts_floor = np.int32(verts).reshape(-1, 2)
 
-    def track_target(self, frame):
-        """
-        Trackea todos los targets registrados en el frame actual.
-        Devuelve lista de tracked_target (target, points_prev, points_cur, H, quad).
-        """
-        if len(self.tracking_targets) == 0:
-            return []
+        cv2.drawContours(img, contours=[verts_floor[:4]], contourIdx=-1, color=self.color_base, thickness=-3)
+        cv2.drawContours(img, contours=[np.vstack((verts_floor[:2], verts_floor[4:5]))], contourIdx=-1, color=(0,255,0), thickness=-3)
+        cv2.drawContours(img, contours=[np.vstack((verts_floor[1:3], verts_floor[4:5]))], contourIdx=-1, color=(255,0,0), thickness=-3)
+        cv2.drawContours(img, contours=[np.vstack((verts_floor[2:4], verts_floor[4:5]))], contourIdx=-1, color=(0,0,150), thickness=-3)
+        cv2.drawContours(img, contours=[np.vstack((verts_floor[3:4], verts_floor[0:1], verts_floor[4:5]))], contourIdx=-1, color=(255,255,0), thickness=-3)
 
-        cur_kps, cur_des = self.detect_features(frame)
-        if cur_des is None or len(cur_kps) < self.min_matches:
-            return []
+        for i, j in self.overlay_edges:
+            (x_start, y_start), (x_end, y_end) = verts[i], verts[j]
+            cv2.line(img, (int(x_start), int(y_start)), (int(x_end), int(y_end)), self.color_lines, 2)
 
-        tracked = []
 
-        # Para cada target hacemos knnMatch target.des -> cur_des
-        for target in self.tracking_targets:
-            if target.descriptors is None or len(target.descriptors) == 0:
-                continue
-            try:
-                matches = self.feature_matcher.knnMatch(target.descriptors, cur_des, k=2)
-            except Exception:
-                continue
+def main():
+    st.title("Realidad Aumentada - Detección de ROI en Streamlit")
+    st.write("""
+    Demostración de realidad aumentada usando OpenCV y Streamlit.
 
-            # Ratio test (Lowe)
-            good = []
-            for m in matches:
-                if len(m) < 2:
-                    continue
-                m1, m2 = m
-                if m1.distance < 0.75 * m2.distance:
-                    good.append(m1)
+    **Instrucciones:**
+    1. Inicia la cámara web.
+    2. Dibuja un rectángulo directamente sobre el video para definir el ROI.
+    3. Aparecerá una pirámide 3D sobre esa región.
+    4. Puedes agregar más de una región.
+    5. Usa *Limpiar Selecciones* para reiniciar.
+    """)
 
-            if len(good) < self.min_matches:
-                continue
+    # Estado persistente
+    if 'tracker' not in st.session_state:
+        st.session_state.tracker = Tracker(scaling_factor=0.8)
 
-            pts_prev = np.float32([ target.keypoints[m.queryIdx].pt for m in good ])
-            pts_cur = np.float32([ cur_kps[m.trainIdx].pt for m in good ])
+    if 'canvas_rects_seen' not in st.session_state:
+        st.session_state.canvas_rects_seen = []
 
-            if len(pts_prev) < 4 or len(pts_cur) < 4:
-                continue
+    if 'camera' not in st.session_state or st.session_state.camera is None:
+        st.session_state.camera = cv2.VideoCapture(0)
 
-            H, mask = cv2.findHomography(pts_prev.reshape(-1,1,2), pts_cur.reshape(-1,1,2), cv2.RANSAC, 3.0)
-            if H is None:
-                continue
-            mask = mask.ravel().astype(bool)
-            if mask.sum() < self.min_matches:
-                continue
+    tracker = st.session_state.tracker
+    cap = st.session_state.camera
 
-            pts_prev_in = pts_prev[mask]
-            pts_cur_in = pts_cur[mask]
+    col1, col2 = st.columns(2)
+    with col1:
+        limpiar = st.button("Limpiar Selecciones")
+    with col2:
+        detener = st.button("Detener Cámara")
 
-            x0, y0, x1, y1 = target.rect
-            quad = np.float32([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]).reshape(-1,1,2)
-            quad_proj = cv2.perspectiveTransform(quad, H).reshape(-1,2)
+    if limpiar:
+        tracker.tracker.clear_targets()
+        tracker.rect = None
+        st.session_state.canvas_rects_seen = []
+        st.rerun()
 
-            track = self.tracked_target(target=target,
-                                       points_prev=pts_prev_in,
-                                       points_cur=pts_cur_in,
-                                       H=H,
-                                       quad=quad_proj)
-            tracked.append(track)
+    if detener:
+        if cap is not None:
+            cap.release()
+        st.session_state.camera = None
+        st.warning("Cámara detenida.")
+        return
 
-        tracked.sort(key=lambda t: len(t.points_prev), reverse=True)
-        return tracked
+    ret, frame = cap.read()
+    if not ret:
+        st.error("No se pudo acceder a la cámara. Verifica que esté conectada.")
+        return
 
-    def clear_targets(self):
-        self.tracking_targets = []
-        # Recreate matcher to ensure clean state
-        self.feature_matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    processed_frame = tracker.process_frame(frame)
+    processed_frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(processed_frame_rgb)
+
+    st.subheader("Selecciona ROI directamente sobre el video")
+
+    if CANVAS_AVAILABLE:
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 0, 0, 0.0)",
+            stroke_width=2,
+            stroke_color="#00FF00",
+            background_image=pil_img,
+            update_streamlit=True,
+            height=pil_img.height,
+            width=pil_img.width,
+            drawing_mode="rect",
+            key="roi_canvas_main",
+        )
+
+        new_roi_added = False
+        if canvas_result is not None and canvas_result.json_data is not None:
+            objects = canvas_result.json_data.get("objects", [])
+            seen = st.session_state.canvas_rects_seen
+            for obj in objects:
+                if obj.get("type") == "rect":
+                    base_w = obj.get("width", 0)
+                    base_h = obj.get("height", 0)
+                    scale_x = obj.get("scaleX", 1)
+                    scale_y = obj.get("scaleY", 1)
+                    width = int(round(base_w * scale_x))
+                    height = int(round(base_h * scale_y))
+
+                    origin_x = obj.get("originX", "left")
+                    origin_y = obj.get("originY", "top")
+                    left = obj.get("left", 0)
+                    top = obj.get("top", 0)
+
+                    if origin_x == "center":
+                        left = left - width / 2.0
+                    if origin_y == "center":
+                        top = top - height / 2.0
+
+                    left = int(round(left))
+                    top = int(round(top))
+
+                    left = max(0, min(left, pil_img.width - 1))
+                    top = max(0, min(top, pil_img.height - 1))
+                    width = max(1, min(width, pil_img.width - left))
+                    height = max(1, min(height, pil_img.height - top))
+
+                    key_tuple = (left, top, width, height)
+                    if key_tuple not in seen:
+                        rect = (left, top, left + width, top + height)
+                        tracker.set_rect(rect)
+                        seen.append(key_tuple)
+                        new_roi_added = True
+                        st.success(f"ROI añadida: {rect}")
+
+        if new_roi_added:
+            st.rerun()
+    else:
+        st.warning("⚠️ streamlit-drawable-canvas no disponible.")
+
+    st.image(processed_frame_rgb, channels="RGB", caption="Video con ROI y pirámide")
+
+
+if __name__ == '__main__':
+    main()
