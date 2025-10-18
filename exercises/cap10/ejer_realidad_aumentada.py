@@ -1,9 +1,9 @@
 import streamlit as st
 
-# ⚠️ DEBE ser el PRIMER comando de Streamlit
+# ⚠️ DEBE ser el PRIMER comando - ANTES de cualquier import que use st
 st.set_page_config(page_title="Realidad Aumentada", layout="wide")
 
-# Ahora importa el resto
+# Ahora importa TODO lo demás
 import cv2
 import numpy as np
 from PIL import Image
@@ -14,11 +14,26 @@ try:
 except Exception:
     CANVAS_AVAILABLE = False
 
-# Importa tu módulo de pose estimation
+# ⚠️ IMPORTANTE: Si pose_estimation.py tiene comandos de Streamlit,
+# tenemos que eliminarlos o modificarlos
 try:
-    from pose_estimation import PoseEstimator, ROISelector
-except ImportError:
-    st.error("Error: No se encontró el módulo 'pose_estimation'. Verifica que esté en el mismo directorio.")
+    # Importar sin que execute código Streamlit
+    import sys
+    import importlib.util
+    
+    spec = importlib.util.spec_from_file_location("pose_estimation", "pose_estimation.py")
+    pose_module = importlib.util.module_from_spec(spec)
+    sys.modules["pose_estimation"] = pose_module
+    
+    # Ejecutar el módulo (pero sin st.set_page_config)
+    spec.loader.exec_module(pose_module)
+    
+    PoseEstimator = pose_module.PoseEstimator
+    ROISelector = pose_module.ROISelector
+    
+except Exception as e:
+    st.error(f"Error importando pose_estimation: {e}")
+    st.info("Alternativa: Asegúrate que pose_estimation.py NO tenga st.set_page_config()")
     st.stop()
 
 
@@ -39,7 +54,6 @@ class Tracker(object):
             [0.5, 0.5, 4]
         ])
         self.overlay_edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)]
-
         self.color_base = (0, 255, 0)
         self.color_lines = (0, 0, 0)
 
@@ -113,14 +127,7 @@ def main():
     1. Inicia la cámara web.
     2. Dibuja un rectángulo directamente sobre el video para definir el ROI.
     3. Aparecerá una pirámide 3D sobre esa región.
-    4. Puedes agregar más de una región.
-    5. Usa *Limpiar Selecciones* para reiniciar.
     """)
-
-    # --- Estado persistente seguro ---
-    if 'tracker' in st.session_state:
-        if type(st.session_state.tracker).__name__ != "Tracker":
-            del st.session_state['tracker']
 
     if 'tracker' not in st.session_state:
         st.session_state.tracker = Tracker(scaling_factor=0.8)
@@ -165,7 +172,6 @@ def main():
     st.subheader("Selecciona ROI directamente sobre el video")
 
     if CANVAS_AVAILABLE:
-        # Dibuja canvas con el tamaño exacto de la imagen
         canvas_result = st_canvas(
             fill_color="rgba(255, 0, 0, 0.0)",
             stroke_width=2,
@@ -178,7 +184,6 @@ def main():
             key="roi_canvas_main",
         )
 
-        # --- PROCESAMIENTO ROBUSTO DE OBJETOS DEVUELTOS POR FABRIC.JS ---
         new_roi_added = False
         if canvas_result is not None and canvas_result.json_data is not None:
             objects = canvas_result.json_data.get("objects", [])
@@ -220,10 +225,7 @@ def main():
 
         if new_roi_added:
             st.rerun()
-    else:
-        st.warning("⚠️ streamlit-drawable-canvas no disponible. Mostrando video sin canvas interactivo.")
 
-    # Mostrar frame con overlay
     st.image(processed_frame_rgb, channels="RGB", caption="Video con ROI y pirámide")
 
 
