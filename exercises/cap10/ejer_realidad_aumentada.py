@@ -1,6 +1,10 @@
+import streamlit as st
+
+# DEBE SER EL PRIMER COMANDO
+st.set_page_config(page_title="Realidad Aumentada", layout="wide")
+
 import cv2
 import numpy as np
-import streamlit as st
 from PIL import Image
 import threading
 import time
