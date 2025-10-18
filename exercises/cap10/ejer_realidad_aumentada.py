@@ -220,6 +220,168 @@ def run():
     if new_roi_added:
         st.experimental_rerun()
 
+# SOLUCIÓN 1: Usar streamlit-webrtc (Recomendado para Streamlit en navegador)
+# Instala: pip install streamlit-webrtc
+
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, RTCConfiguration
+import cv2
+
+def run_with_webrtc():
+    st.title("Realidad Aumentada con WebRTC")
+    
+    rtc_configuration = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
+    
+    class VideoProcessor:
+        def recv(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            # Aquí procesas con tu Tracker
+            processed = tracker.process_frame(img)
+            return av.VideoFrame.from_ndarray(processed, format="bgr24")
+    
+    webrtc_ctx = webrtc_streamer(
+        key="AR-tracking",
+        mode=WebrtcMode.SENDRECV,
+        rtc_configuration=rtc_configuration,
+        media_stream_constraints={"video": True},
+        async_processing=True,
+    )
+
+
+# SOLUCIÓN 2: Diagnosticar el problema (ejecuta esto primero)
+import cv2
+import sys
+
+def diagnosticar_camara():
+    print("=== DIAGNÓSTICO DE CÁMARA ===")
+    print(f"Sistema: {sys.platform}")
+    print(f"OpenCV versión: {cv2.__version__}")
+    
+    # Intenta acceder a la cámara
+    cap = cv2.VideoCapture(0)
+    print(f"VideoCapture(0) abierto: {cap.isOpened()}")
+    
+    if cap.isOpened():
+        ret, frame = cap.read()
+        print(f"Frame capturado: {ret}")
+        if ret:
+            print(f"Dimensiones: {frame.shape}")
+        cap.release()
+    else:
+        print("❌ No se pudo abrir la cámara")
+        print("\nIntentando otras cámaras...")
+        for i in range(5):
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                print(f"✓ Cámara {i} disponible")
+                cap.release()
+
+diagnosticar_camara()
+
+
+# SOLUCIÓN 3: Usar archivo de video o imagen estática para testing
+def run_con_archivo():
+    st.title("Realidad Aumentada - Modo Archivo")
+    
+    opcion = st.radio("Selecciona entrada:", ["Cámara", "Video", "Imagen"])
+    
+    if opcion == "Cámara":
+        cap = cv2.VideoCapture(0)
+    elif opcion == "Video":
+        video_file = st.file_uploader("Sube un video", type=['mp4', 'avi'])
+        if video_file:
+            cap = cv2.VideoCapture(video_file.name)
+    else:
+        imagen = st.file_uploader("Sube una imagen", type=['jpg', 'png'])
+        if imagen:
+            from PIL import Image
+            img = Image.open(imagen)
+            # Procesar imagen única
+            return
+    
+    if cap and cap.isOpened():
+        ret, frame = cap.read()
+        # ... resto del código
+
+
+# SOLUCIÓN 4: Modificar tu código para mejor manejo de errores
+import cv2
+import numpy as np
+import streamlit as st
+from PIL import Image
+
+def run_mejorado():
+    st.title("Realidad Aumentada - Detección de ROI")
+    
+    # Intentar diferentes índices de cámara
+    cap = None
+    for camera_index in range(5):
+        cap = cv2.VideoCapture(camera_index)
+        if cap.isOpened():
+            st.info(f"✓ Cámara encontrada en índice {camera_index}")
+            break
+        cap.release()
+    
+    if cap is None or not cap.isOpened():
+        st.error("""
+        ❌ No se pudo acceder a la cámara.
+        
+        **Posibles soluciones:**
+        1. **Verifica permisos**: La app necesita permiso para usar la cámara
+        2. **Cámara conectada**: Asegúrate que esté enchufada
+        3. **Otra app la usa**: Cierra otras apps que usen la cámara
+        4. **Prueba con HTTPS**: Streamlit Cloud requiere HTTPS
+        5. **Usa streamlit-webrtc**: Mejor opción para navegador
+        
+        **Para desarrollo local:**
+        ```
+        streamlit run app.py
+        ```
+        
+        **Para Streamlit Cloud:**
+        Usa `streamlit-webrtc` en lugar de `cv2.VideoCapture`
+        """)
+        return
+    
+    # ... resto de tu código con mejor manejo
+
+
+# SOLUCIÓN 5: Si estás en Streamlit Cloud, esta es la ÚNICA opción viable
+# Reemplaza tu código con streamlit-webrtc:
+
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, WebrtcMode, RTCConfiguration
+import av
+
+def run_streamlit_cloud():
+    """Solución para Streamlit Cloud (HTTPS obligatorio)"""
+    st.title("Realidad Aumentada en Streamlit Cloud")
+    
+    rtc_configuration = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
+    
+    class VideoProcessor:
+        def __init__(self, tracker):
+            self.tracker = tracker
+        
+        def recv(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            processed = self.tracker.process_frame(img)
+            return av.VideoFrame.from_ndarray(processed, format="bgr24")
+    
+    webrtc_ctx = webrtc_streamer(
+        key="ar-tracking",
+        mode=WebrtcMode.SENDRECV,
+        rtc_configuration=rtc_configuration,
+        media_stream_constraints={"video": True},
+        async_processing=True,
+    )
+    
+    if webrtc_ctx.state.playing:
+        st.success("Streaming activo")
 
 if __name__ == '__main__':
-    run()
+    run_mejorado()
