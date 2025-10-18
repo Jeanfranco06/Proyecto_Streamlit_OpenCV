@@ -1,21 +1,19 @@
-import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebrtcMode, RTCConfiguration
-import av
 import cv2
+import numpy as np
+import streamlit as st
 from PIL import Image
+import threading
+import time
 
 # Importa tu clase Tracker
-from .pose_estimation import PoseEstimator, ROISelector
+# from .pose_estimation import PoseEstimator, ROISelector
 
 class Tracker(object):
     def __init__(self, scaling_factor=0.8):
         self.rect = None
         self.scaling_factor = scaling_factor
-        self.tracker = PoseEstimator()
         self.first_frame = True
         self.frame = None
-        self.roi_selector = None
-
         self.overlay_vertices = np.float32([
             [0,   0,   0],
             [0,   1,   0],
@@ -24,137 +22,133 @@ class Tracker(object):
             [0.5, 0.5, 4]
         ])
         self.overlay_edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)]
-
         self.color_base = (0, 255, 0)
         self.color_lines = (0, 0, 0)
-
-    def set_rect(self, rect):
-        self.rect = rect
-        self.tracker.add_target(self.frame, rect)
 
     def process_frame(self, frame):
         frame = cv2.resize(frame, None, fx=self.scaling_factor,
                           fy=self.scaling_factor, interpolation=cv2.INTER_AREA)
-
-        if self.first_frame:
-            self.frame = frame.copy()
-            self.roi_selector = ROISelector("AR", frame, self.set_rect)
-            self.first_frame = False
-
         self.frame = frame.copy()
-        img = frame.copy()
-
-        tracked = self.tracker.track_target(self.frame)
-        for item in tracked:
-            cv2.polylines(img, [np.int32(item.quad)], True, self.color_lines, 2)
-            for (x, y) in np.int32(item.points_cur):
-                cv2.circle(img, (x, y), 2, self.color_lines)
-            self.overlay_graphics(img, item)
-
-        if self.roi_selector:
-            self.roi_selector.draw_rect(img, self.rect)
-
-        return img
-
-    def overlay_graphics(self, img, tracked):
-        x_start, y_start, x_end, y_end = tracked.target.rect
-        quad_3d = np.float32([[x_start, y_start, 0], [x_end, y_start, 0],
-                             [x_end, y_end, 0], [x_start, y_end, 0]])
-
-        h, w = img.shape[:2]
-        K = np.float64([[w, 0, 0.5*(w-1)],
-                       [0, w, 0.5*(h-1)],
-                       [0, 0, 1.0]])
-        dist_coef = np.zeros(4)
-
-        ret, rvec, tvec = cv2.solvePnP(objectPoints=quad_3d,
-                                      imagePoints=tracked.quad,
-                                      cameraMatrix=K,
-                                      distCoeffs=dist_coef)
-        if not ret:
-            return
-
-        verts = self.overlay_vertices * [(x_end-x_start), (y_end-y_start), -(x_end-x_start)*0.3] + (x_start, y_start, 0)
-        verts = cv2.projectPoints(verts, rvec, tvec, cameraMatrix=K, distCoeffs=dist_coef)[0].reshape(-1, 2)
-        verts_floor = np.int32(verts).reshape(-1, 2)
-
-        cv2.drawContours(img, contours=[verts_floor[:4]], contourIdx=-1, color=self.color_base, thickness=-3)
-        cv2.drawContours(img, contours=[np.vstack((verts_floor[:2], verts_floor[4:5]))], contourIdx=-1, color=(0,255,0), thickness=-3)
-        cv2.drawContours(img, contours=[np.vstack((verts_floor[1:3], verts_floor[4:5]))], contourIdx=-1, color=(255,0,0), thickness=-3)
-        cv2.drawContours(img, contours=[np.vstack((verts_floor[2:4], verts_floor[4:5]))], contourIdx=-1, color=(0,0,150), thickness=-3)
-        cv2.drawContours(img, contours=[np.vstack((verts_floor[3:4], verts_floor[0:1], verts_floor[4:5]))], contourIdx=-1, color=(255,255,0), thickness=-3)
-
-        for i, j in self.overlay_edges:
-            (x_start, y_start), (x_end, y_end) = verts[i], verts[j]
-            cv2.line(img, (int(x_start), int(y_start)), (int(x_end), int(y_end)), self.color_lines, 2)
+        return frame
 
 
-class VideoProcessor:
-    """Procesa frames de video en tiempo real"""
-    def __init__(self, tracker):
-        self.tracker = tracker
-
-    def recv(self, frame):
-        # Convierte frame de av.VideoFrame a numpy array (BGR)
-        img = frame.to_ndarray(format="bgr24")
-        
-        # Procesa con tu Tracker
-        processed = self.tracker.process_frame(img)
-        
-        # Convierte de vuelta a av.VideoFrame
-        return av.VideoFrame.from_ndarray(processed, format="bgr24")
+def find_camera():
+    """Busca la primera cámara disponible"""
+    for i in range(10):
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            cap.release()
+            return i
+    return None
 
 
 def run():
-    st.title("Realidad Aumentada - WebRTC Streaming")
+    st.set_page_config(page_title="Realidad Aumentada", layout="wide")
+    st.title("Realidad Aumentada - OpenCV")
     st.write("""
-    Demostración de realidad aumentada usando OpenCV y Streamlit WebRTC.
-
-    **Instrucciones:**
-    1. Haz clic en **'Start'** para iniciar la cámara
-    2. Dibuja un rectángulo sobre el video para definir el ROI
-    3. Aparecerá una pirámide 3D sobre esa región
-    4. Puedes agregar más de una región
+    Demostración de realidad aumentada usando OpenCV y Streamlit.
+    
+    **Funciona en desarrollo local sin WebRTC**
     """)
 
-    # Inicializa el tracker
+    # Inicializa sesión
     if 'tracker' not in st.session_state:
         st.session_state.tracker = Tracker(scaling_factor=0.8)
+    
+    if 'capturing' not in st.session_state:
+        st.session_state.capturing = False
+    
+    if 'frame_placeholder' not in st.session_state:
+        st.session_state.frame_placeholder = None
 
     tracker = st.session_state.tracker
 
-    # Configuración de WebRTC
-    rtc_configuration = RTCConfiguration(
-        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-    )
+    # Controles
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        start = st.button("▶️ Iniciar Cámara", key="start_btn")
+    with col2:
+        stop = st.button("⏹️ Detener Cámara", key="stop_btn")
+    with col3:
+        clear = st.button("🔄 Limpiar", key="clear_btn")
 
-    # Crea el streamer de WebRTC
-    webrtc_ctx = webrtc_streamer(
-        key="ar-tracking",
-        mode=WebrtcMode.SENDRECV,
-        rtc_configuration=rtc_configuration,
-        media_stream_constraints={
-            "video": {"width": {"ideal": 640}},
-            "audio": False
-        },
-        async_processing=True,
-    )
+    if start:
+        st.session_state.capturing = True
+        st.rerun()
+    
+    if stop:
+        st.session_state.capturing = False
+        st.rerun()
+    
+    if clear:
+        st.session_state.tracker = Tracker(scaling_factor=0.8)
+        st.rerun()
 
-    # Procesa frames si el stream está activo
-    if webrtc_ctx.state.playing:
-        video_processor = VideoProcessor(tracker)
-        webrtc_ctx.rtc_peer_connection.video_processor = video_processor
+    # Placeholder para mostrar video
+    frame_placeholder = st.empty()
+    status_placeholder = st.empty()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Limpiar Selecciones"):
-                tracker.tracker.clear_targets()
-                tracker.rect = None
-                st.rerun()
-
-        st.success("✓ Stream activo - Cámara conectada")
+    if st.session_state.capturing:
+        # Busca cámara disponible
+        camera_idx = find_camera()
+        
+        if camera_idx is None:
+            st.error("""
+            ❌ No se encontró ninguna cámara disponible.
+            
+            **Soluciones:**
+            - Verifica que la cámara esté conectada
+            - Cierra otras aplicaciones que usen la cámara (Zoom, Teams, etc)
+            - En Windows/Mac, verifica permisos de cámara
+            - Intenta reconectar la cámara USB
+            """)
+            st.session_state.capturing = False
+        else:
+            cap = cv2.VideoCapture(camera_idx)
+            
+            if not cap.isOpened():
+                st.error(f"No se pudo abrir la cámara en índice {camera_idx}")
+                st.session_state.capturing = False
+            else:
+                # Configurar propiedades de cámara
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+                
+                status_placeholder.info(f"✓ Cámara abierta (índice: {camera_idx})")
+                
+                frame_count = 0
+                while st.session_state.capturing:
+                    ret, frame = cap.read()
+                    
+                    if not ret:
+                        st.error("Error al capturar frame")
+                        break
+                    
+                    # Procesa frame con tracker
+                    processed = tracker.process_frame(frame)
+                    
+                    # Convierte BGR a RGB para mostrar
+                    frame_rgb = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
+                    
+                    # Muestra el frame
+                    frame_placeholder.image(frame_rgb, channels="RGB", use_column_width=True)
+                    
+                    frame_count += 1
+                    status_placeholder.metric("Frames", frame_count)
+                    
+                    # Control de velocidad
+                    time.sleep(0.01)
+                
+                cap.release()
+                status_placeholder.success("Cámara cerrada")
     else:
-        st.info("Haz clic en 'Start' para iniciar la cámara")
+        # Muestra una imagen de espera
+        placeholder_img = np.ones((480, 640, 3), dtype=np.uint8) * 200
+        cv2.putText(placeholder_img, "Presiona 'Iniciar Camara' para comenzar", 
+                    (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        frame_placeholder.image(placeholder_img, channels="RGB", use_column_width=True)
 
 
 if __name__ == '__main__':
