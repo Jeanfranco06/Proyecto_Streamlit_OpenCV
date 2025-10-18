@@ -178,128 +178,99 @@ def eliminacion_interactiva():
     # Interfaz de selección de región
     st.markdown("### Selecciona el Objeto a Eliminar")
     
-    # Usar columnas para el layout
-    col1, col2 = st.columns([2, 1])
+    # SOLUCIÓN: No usar streamlit-drawable-canvas, usar entrada manual confiable
+    st.markdown("**Ingresa las coordenadas del rectángulo a eliminar:**")
+    st.markdown("*(x, y) = esquina superior izquierda | (ancho, alto) = dimensiones*")
     
-    with col1:
-        st.markdown("**Dibuja un rectángulo sobre el objeto:**")
-        
-        # Usar streamlit-drawable-canvas si está disponible
-        try:
-            from streamlit_drawable_canvas import st_canvas
-            
-            # IMPORTANTE: Convertir a PIL Image correctamente
-            if len(img.shape) == 3 and img.shape[2] == 3:
-                # Convertir BGR a RGB primero
-                img_rgb = bgr_to_rgb(img)
-            else:
-                img_rgb = img
-            
-            pil_img = Image.fromarray(img_rgb)
-            
-            canvas_result = st_canvas(
-                fill_color="rgba(255, 0, 0, 0.3)",
-                stroke_width=3,
-                stroke_color="#00FF00",
-                background_image=pil_img,
-                update_streamlit=True,
-                height=pil_img.height,
-                width=pil_img.width,
-                drawing_mode="rect",
-                key="canvas_seam",
-            )
-            
-            has_drawable = True
-            
-        except ImportError:
-            has_drawable = False
-            st.info("Instala `streamlit-drawable-canvas` para selección interactiva: `pip install streamlit-drawable-canvas`")
-            
-            # Alternativa: Entrada manual de coordenadas
-            st.markdown("**Ingresa las coordenadas manualmente:**")
-            
-            col_x, col_y, col_w, col_h = st.columns(4)
-            with col_x:
-                rect_x = entrada_numero("X", 0, img.shape[1], 100, 1, key="rect_x")
-            with col_y:
-                rect_y = entrada_numero("Y", 0, img.shape[0], 100, 1, key="rect_y")
-            with col_w:
-                rect_w = entrada_numero("Ancho", 10, img.shape[1], 100, 1, key="rect_w")
-            with col_h:
-                rect_h = entrada_numero("Alto", 10, img.shape[0], 100, 1, key="rect_h")
-            
-            # Dibujar rectángulo de vista previa
-            img_preview = img.copy()
-            cv2.rectangle(img_preview, (rect_x, rect_y), 
-                         (rect_x + rect_w, rect_y + rect_h), 
-                         (0, 255, 0), 2)
-            mostrar_imagen_segura(img_preview, "Vista previa de la selección")
-            
-            canvas_result = None
+    # Mostrar imagen con referencia
+    st.markdown("**Imagen de referencia:**")
+    mostrar_imagen_segura(img, f"Tamaño: {img.shape[1]} x {img.shape[0]}px")
     
-    with col2:
-        st.markdown("**Instrucciones:**")
-        st.info("""
-        1. Dibuja un rectángulo alrededor del objeto que deseas eliminar
-        2. Ajusta los parámetros si es necesario
-        3. Haz clic en 'Eliminar Objeto'
-        4. Espera el procesamiento (puede tomar tiempo)
-        """)
-        
-        st.warning("**Importante:** El procesamiento puede tomar varios minutos dependiendo del tamaño de la región.")
+    col_x, col_y, col_w, col_h = st.columns(4)
+    
+    with col_x:
+        rect_x = st.number_input(
+            "X (columna inicio)",
+            min_value=0,
+            max_value=max(0, img.shape[1] - 1),
+            value=min(100, img.shape[1] // 4),
+            step=1,
+            key="rect_x_input"
+        )
+    
+    with col_y:
+        rect_y = st.number_input(
+            "Y (fila inicio)",
+            min_value=0,
+            max_value=max(0, img.shape[0] - 1),
+            value=min(100, img.shape[0] // 4),
+            step=1,
+            key="rect_y_input"
+        )
+    
+    with col_w:
+        rect_w = st.number_input(
+            "Ancho",
+            min_value=10,
+            max_value=img.shape[1],
+            value=min(100, img.shape[1] // 3),
+            step=1,
+            key="rect_w_input"
+        )
+    
+    with col_h:
+        rect_h = st.number_input(
+            "Alto",
+            min_value=10,
+            max_value=img.shape[0],
+            value=min(100, img.shape[0] // 3),
+            step=1,
+            key="rect_h_input"
+        )
+    
+    # Vista previa del rectángulo
+    st.markdown("---")
+    st.markdown("**Vista previa de la selección:**")
+    
+    img_preview = img.copy()
+    
+    # Validar y ajustar coordenadas
+    rect_x = max(0, min(int(rect_x), img.shape[1] - 1))
+    rect_y = max(0, min(int(rect_y), img.shape[0] - 1))
+    rect_w = max(10, min(int(rect_w), img.shape[1] - rect_x))
+    rect_h = max(10, min(int(rect_h), img.shape[0] - rect_y))
+    
+    # Dibujar rectángulo en la vista previa
+    cv2.rectangle(img_preview, (rect_x, rect_y), 
+                 (rect_x + rect_w, rect_y + rect_h), 
+                 (0, 255, 0), 3)
+    
+    # Agregar texto con info del rectángulo
+    cv2.putText(img_preview, f"({rect_x}, {rect_y}) - {rect_w}x{rect_h}",
+               (max(10, rect_x - 5), max(20, rect_y - 5)),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+    mostrar_imagen_segura(img_preview, "Rectángulo en verde")
+    
+    st.info(f"""
+    **Región seleccionada:**
+    - Posición: ({rect_x}, {rect_y})
+    - Dimensiones: {rect_w} x {rect_h}px
+    - Área: {rect_w * rect_h} píxeles
+    """)
     
     st.markdown("---")
     
     # Botón de procesamiento
-    if has_drawable and canvas_result is not None and canvas_result.json_data is not None:
-        objects = canvas_result.json_data.get("objects", [])
-        
-        if len(objects) > 0:
-            rect = objects[-1]
-            
-            try:
-                rect_x = max(0, int(rect.get("left", 0)))
-                rect_y = max(0, int(rect.get("top", 0)))
-                rect_w = max(1, int(rect.get("width", 1)))
-                rect_h = max(1, int(rect.get("height", 1)))
-                
-                # Validar límites
-                rect_x = min(rect_x, img.shape[1] - 1)
-                rect_y = min(rect_y, img.shape[0] - 1)
-                rect_w = min(rect_w, img.shape[1] - rect_x)
-                rect_h = min(rect_h, img.shape[0] - rect_y)
-                
-            except Exception as e:
-                st.error(f"Error al extraer coordenadas: {e}")
-                return
-            
-            if rect_w > 0 and rect_h > 0:
-                st.success(f"Región seleccionada: x={rect_x}, y={rect_y}, w={rect_w}, h={rect_h}")
-                
-                if boton_accion("Eliminar Objeto", key="remove_btn"):
-                    procesar_eliminacion(
-                        img, 
-                        (rect_x, rect_y, rect_w, rect_h),
-                        extra_seams,
-                        energy_method,
-                        protection_size,
-                        mostrar_proceso
-                    )
-            else:
-                st.warning("El rectángulo debe tener dimensiones válidas")
-        else:
-            st.info("Dibuja un rectángulo sobre el objeto a eliminar")
-    
-    elif not has_drawable:
-        if boton_accion("Eliminar Objeto", key="remove_btn_manual"):
-            procesar_eliminacion(
-                img,
-                (rect_x, rect_y, rect_w, rect_h),
-                extra_seams,
-                energy_method,
-                protection_size,
-                mostrar_proceso
-            )
+    if boton_accion("Eliminar Objeto", key="remove_btn_final"):
+        procesar_eliminacion(
+            img,
+            (rect_x, rect_y, rect_w, rect_h),
+            extra_seams,
+            energy_method,
+            protection_size,
+            mostrar_proceso
+        )
 
 
 def redimensionado_inteligente():
