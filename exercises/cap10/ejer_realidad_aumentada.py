@@ -1,7 +1,6 @@
 import streamlit as st
 
 # ⚠️ DEBE ser el PRIMER comando - ANTES de cualquier import que use st
-st.set_page_config(page_title="Realidad Aumentada", layout="wide")
 
 # Ahora importa TODO lo demás
 import cv2
